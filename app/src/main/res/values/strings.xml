@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">CallRecorder NotebookLM</string>
+    <string name="accessibility_service_label">Call Recorder Accessibility Service</string>
+    <string name="accessibility_service_description">Permite la detección de llamadas de voz activas en aplicaciones de comunicación como WhatsApp para coordinar la transcripción y notas en NotebookLM.</string>
+</resources>
