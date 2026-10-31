@@ -1,8 +1,25 @@
 # CallRecorder NotebookLM (Android + Gemini AI)
 
-Aplicación nativa de Android desarrollada en **Kotlin** y **Jetpack Compose**, diseñada específicamente para la captura, grabación y transcripción inteligente de llamadas telefónicas tradicionales (GSM) y llamadas de voz sobre IP (VoIP) de **WhatsApp**, generando resúmenes estructurados automáticos mediante la API de **Google Gemini 3.8 Flash** optimizados para su importación directa en **NotebookLM**.
+Aplicación nativa de Android desarrollada en **Kotlin** y **Jetpack Compose**, diseñada específicamente para la captura, grabación y transcripción inteligente de llamadas telefónicas tradicionales (GSM) y llamadas de voz sobre IP (VoIP) de **WhatsApp**, generando resúmenes estructurados automáticos mediante la API de **Google Gemini (3.8 Flash con cascada a 1.5 Flash y 2.0 Flash Exp)** optimizados para su importación directa en **NotebookLM**.
 
 Optimizado para dispositivos **Xiaomi (MIUI / HyperOS)** y compatible con **Android 10 hasta Android 14+ (API 26 a 34)**.
+
+---
+
+## ⚡ Reemplazo Total del Script de Termux
+
+Esta aplicación **elimina por completo la necesidad de Termux, Python o scripts bash en el dispositivo móvil**. 
+
+Toda la lógica que anteriormente requería un script (`procesar_llamadas.py`) ahora vive dentro del motor nativo de la aplicación:
+1. **Detección y emparejamiento 1 a 1:** Al finalizar la llamada o procesar un archivo de audio (`.m4a`, `.mp3`, `.wav`, `.aac`, `.ogg`, `.amr`), el resumen se guarda exactamente con la misma nomenclatura base:
+   - Audio: `Documents/Llamadas_NotebookLM/{nombre_base}.m4a`
+   - Resumen: `Documents/Llamadas_NotebookLM/{nombre_base}_resumen.txt`
+2. **Cascada Inteligente de Modelos (Fallback):**
+   - Intento 1: `gemini-3.8-flash`
+   - Intento 2 (si el modelo no está disponible o da 404): `gemini-1.5-flash`
+   - Intento 3: `gemini-2.0-flash-exp`
+3. **Timeout extendido a 180 segundos:** Para procesar llamadas extensas sin desconexiones prematuras.
+4. **Procesamiento Manual desde la App:** Botón integrado *"Procesar Último Audio Ahora"* y acciones directas por archivo en la lista, permitiendo procesar cualquier audio pendiente con un solo toque y sin abrir ninguna consola.
 
 ---
 
@@ -14,22 +31,23 @@ Optimizado para dispositivos **Xiaomi (MIUI / HyperOS)** y compatible con **Andr
 - **Captura de Audio Optimizada:**
   - Módulo `AudioManagerRecorder` con `MediaRecorder` configurado con fuente `VOICE_COMMUNICATION` (con cancelación de eco por hardware) y fallback a `MIC`.
   - Formato de compresión de alta eficiencia: **MPEG_4 / AAC**, frecuencia de muestreo **16 kHz (Mono)** a **32 kbps**, maximizando inteligibilidad para modelos de procesamiento de lenguaje natural y reduciendo el consumo de datos y almacenamiento.
-- **Inteligencia Artificial con Google Gemini 3.8 Flash:**
-  - Envío automático de audio mediante payload estructurado `inlineData` en Base64 a `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent`.
+- **Inteligencia Artificial con Google Gemini:**
+  - Envío automático de audio mediante payload estructurado `inlineData` en Base64.
   - Extracción automática de:
-    1. **Resumen Ejecutivo** (Origen, fecha y hora).
+    1. **Resumen Ejecutivo** (Archivo origen, fecha y hora de procesamiento).
     2. **Puntos Principales Tratados**.
     3. **Acuerdos y Compromisos**.
     4. **Tareas Pendientes (Action Items)**.
     5. **Transcripción Completa**.
 - **Almacenamiento Compatible con Scoped Storage:**
-  - Guarda los archivos de audio (`.m4a`) y los resúmenes (`.txt`) en la carpeta pública del dispositivo:  
+  - Guarda los archivos en la carpeta pública del dispositivo:  
     `/storage/emulated/0/Documents/Llamadas_NotebookLM/`
 - **Seguridad y Cifrado:**
   - Clave de API de Gemini protegida mediante `EncryptedSharedPreferences` con llaves maestras **AES-256 GCM**.
 - **Interfaz Moderna en Jetpack Compose:**
   - Diagnóstico guiado de permisos, accesibilidad y ajustes de HyperOS.
-  - Explorador y visor integrado de grabaciones y resúmenes con soporte para abrir o compartir vía `FileProvider`.
+  - Indicador de estado de procesamiento en tiempo real.
+  - Explorador y visor integrado con opciones para abrir o compartir vía `FileProvider`.
 
 ---
 
@@ -45,7 +63,7 @@ app/src/main/java/com/example/callrecorder/
 │   └── AppPreferences.kt            # Almacenamiento seguro cifrado (API Key y toggles)
 │
 ├── network/
-│   └── GeminiProcessor.kt           # Cliente OkHttp, serialización JSON y llamada a Gemini 3.8 Flash
+│   └── GeminiProcessor.kt           # OkHttp, serialización JSON, cascada de modelos y guardado 1:1
 │
 ├── service/
 │   ├── CallAccessibilityService.kt  # Detección de eventos de ventana de WhatsApp
@@ -75,32 +93,11 @@ Los dispositivos Xiaomi poseen mecanismos estrictos de ahorro de batería que pu
 
 ---
 
-## 📋 Requisitos y Permisos
-
-Declarados en `AndroidManifest.xml`:
-- `android.permission.RECORD_AUDIO`: Captura de audio desde el micrófono.
-- `android.permission.READ_PHONE_STATE`: Monitoreo del estado de llamada GSM.
-- `android.permission.FOREGROUND_SERVICE` y `FOREGROUND_SERVICE_MICROPHONE`: Requerido en Android 14+ para grabación persistente.
-- `android.permission.POST_NOTIFICATIONS`: Alertas del Foreground Service y notificaciones de resumen listo.
-- `android.permission.INTERNET`: Envío del audio a la API de Google Gemini.
-
----
-
 ## 🛠️ Compilación y Generación del APK
 
-### Opción 1: Compilación Automática en la Nube (GitHub Actions)
+### Compilación Automática en la Nube (GitHub Actions)
 Este repositorio incluye un flujo de integración continua en `.github/workflows/build-apk.yml`.
 Cada vez que se sube un commit a la rama `main`, GitHub compila automáticamente el proyecto en un entorno Ubuntu con el Android SDK oficial y publica el archivo `app-debug.apk` en la pestaña **Releases** y en **Artifacts**.
-
-### Opción 2: Compilación Local con Android Studio
-1. Clona el repositorio:
-   ```bash
-   git clone https://github.com/GhostLT/CallRecorder-NotebookLM.git
-   ```
-2. Abre la carpeta del proyecto en **Android Studio** (versión Iguana, Jellyfish o superior).
-3. Deja que Gradle descargue las dependencias y sincronice el proyecto.
-4. Conecta tu teléfono Android con la depuración USB habilitada y pulsa **Run (Shift + F10)** o genera el APK desde:  
-   `Build` > `Build Bundle(s) / APK(s)` > `Build APK(s)`.
 
 ---
 

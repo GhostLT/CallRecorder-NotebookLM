@@ -35,16 +35,24 @@ class GeminiProcessor(
 
     companion object {
         private const val TAG = "GeminiProcessor"
-        private const val API_URL =
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
+        private const val BASE_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/"
         private const val SUBFOLDER_NAME = "Llamadas_NotebookLM"
         private const val CHANNEL_ID = "channel_call_summary"
         private const val NOTIFICATION_ID = 2001
+
+        val SUPPORTED_EXTENSIONS = listOf("mp3", "m4a", "wav", "aac", "ogg", "amr")
+
+        // Lista de modelos ordenados por prioridad idéntica al script de Termux
+        val CANDIDATE_MODELS = listOf(
+            "gemini-3.8-flash",
+            "gemini-1.5-flash",
+            "gemini-2.0-flash-exp"
+        )
     }
 
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
+        .readTimeout(180, TimeUnit.SECONDS) // 180 segundos idéntico a Termux
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
@@ -52,6 +60,10 @@ class GeminiProcessor(
         createNotificationChannel()
     }
 
+    /**
+     * Procesa el archivo de audio local probando en cascada los modelos disponibles.
+     * Guarda el archivo como {nombre_base}_resumen.txt idéntico a la lógica de Termux.
+     */
     suspend fun processAudioCall(audioFile: File): Result<File> = withContext(Dispatchers.IO) {
         try {
             if (!audioFile.exists() || audioFile.length() == 0L) {
@@ -60,19 +72,23 @@ class GeminiProcessor(
 
             val mimeType = when (audioFile.extension.lowercase(Locale.ROOT)) {
                 "mp3" -> "audio/mp3"
-                "m4a" -> "audio/mp4"
-                "aac" -> "audio/aac"
+                "m4a" -> "audio/m4a"
                 "wav" -> "audio/wav"
-                else -> "audio/mp4"
+                "aac" -> "audio/aac"
+                "ogg" -> "audio/ogg"
+                "amr" -> "audio/amr"
+                else -> "audio/m4a"
             }
             val base64Audio = encodeFileToBase64(audioFile)
 
             val currentDate = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
             val promptText = """
                 Analiza detalladamente esta llamada telefónica en español. Genera un documento claro y estructurado con el siguiente formato:
+
                 # RESUMEN EJECUTIVO DE LLAMADA
-                - Origen: ${audioFile.name}
-                - Fecha: $currentDate
+                - Archivo origen: ${audioFile.name}
+                - Fecha de procesamiento: $currentDate
+
                 ## 1. Puntos Principales Tratados
                 ## 2. Acuerdos y Compromisos
                 ## 3. Tareas Pendientes (Action Items)
@@ -98,26 +114,53 @@ class GeminiProcessor(
             val mediaType = "application/json; charset=utf-8".toMediaType()
             val requestBody = requestJson.toString().toRequestBody(mediaType)
 
-            val httpRequest = Request.Builder()
-                .url(API_URL)
-                .addHeader("x-goog-api-key", apiKey)
-                .post(requestBody)
-                .build()
+            var extractedSummary: String? = null
+            var successfulModel: String? = null
+            var lastErrorMessage: String? = null
 
-            Log.d(TAG, "Enviando audio (${audioFile.length() / 1024} KB) a Gemini API...")
+            // Cascada de modelos (Prueba 3.8 -> 1.5 -> 2.0-exp)
+            for (model in CANDIDATE_MODELS) {
+                val url = "$BASE_API_URL$model:generateContent"
+                Log.d(TAG, "[*] Intentando con modelo: $model...")
 
-            val response = httpClient.newCall(httpRequest).execute()
-            val responseBody = response.body?.string()
+                val httpRequest = Request.Builder()
+                    .url(url)
+                    .addHeader("x-goog-api-key", apiKey)
+                    .post(requestBody)
+                    .build()
 
-            if (!response.isSuccessful || responseBody == null) {
-                val errorMsg = "Fallo en la API de Gemini (${response.code}): $responseBody"
-                Log.e(TAG, errorMsg)
-                return@withContext Result.failure(IOException(errorMsg))
+                try {
+                    val response = httpClient.newCall(httpRequest).execute()
+                    val responseBody = response.body?.string()
+
+                    if (response.isSuccessful && responseBody != null) {
+                        extractedSummary = parseGeminiResponse(responseBody)
+                        successfulModel = model
+                        Log.i(TAG, "[+] Éxito con modelo: $model")
+                        break
+                    } else if (response.code == 404) {
+                        Log.w(TAG, "[-] Modelo $model no disponible (404), intentando con el siguiente...")
+                        continue
+                    } else {
+                        val err = "Error ${response.code} con modelo $model: $responseBody"
+                        Log.e(TAG, err)
+                        lastErrorMessage = err
+                    }
+                } catch (netEx: Exception) {
+                    Log.e(TAG, "[!] Error de red con modelo $model: ${netEx.message}")
+                    lastErrorMessage = netEx.message
+                }
             }
 
-            val extractedSummary = parseGeminiResponse(responseBody)
-            val summaryFile = saveSummaryToFile(extractedSummary)
-            showSuccessNotification(summaryFile.name)
+            if (extractedSummary == null) {
+                return@withContext Result.failure(
+                    IOException("No se pudo procesar con los modelos disponibles. Último error: $lastErrorMessage")
+                )
+            }
+
+            // Guardar con el mismo nombre base que el audio: {nombre_base}_resumen.txt
+            val summaryFile = saveSummaryToFile(audioFile, extractedSummary)
+            showSuccessNotification(summaryFile.name, successfulModel ?: "Gemini")
 
             Result.success(summaryFile)
 
@@ -154,15 +197,17 @@ class GeminiProcessor(
         throw IOException("La respuesta de Gemini no contiene candidatos con texto válido.")
     }
 
-    private fun saveSummaryToFile(content: String): File {
-        val documentsFolder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-        val targetDir = File(documentsFolder, SUBFOLDER_NAME)
+    /**
+     * Guarda el resumen con el formato exacto de Termux: {nombre_base}_resumen.txt
+     */
+    private fun saveSummaryToFile(audioFile: File, content: String): File {
+        val targetDir = getWorkingDir()
         if (!targetDir.exists()) {
             targetDir.mkdirs()
         }
 
-        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val resultFile = File(targetDir, "LLAMADA_${timestamp}_resumen.txt")
+        val baseName = audioFile.nameWithoutExtension
+        val resultFile = File(targetDir, "${baseName}_resumen.txt")
 
         FileOutputStream(resultFile).use { output ->
             output.write(content.toByteArray(Charsets.UTF_8))
@@ -170,6 +215,25 @@ class GeminiProcessor(
 
         Log.i(TAG, "Resumen guardado exitosamente en: ${resultFile.absolutePath}")
         return resultFile
+    }
+
+    private fun getWorkingDir(): File {
+        val documentsFolder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+        return File(documentsFolder, SUBFOLDER_NAME)
+    }
+
+    /**
+     * Encuentra el último archivo de audio grabado en la carpeta (equivalente a obtener_ultimo_audio de Termux).
+     */
+    fun getLatestAudioFile(): File? {
+        val dir = getWorkingDir()
+        if (!dir.exists()) return null
+        return dir.listFiles()
+            ?.filter { file ->
+                val ext = file.extension.lowercase(Locale.ROOT)
+                ext in SUPPORTED_EXTENSIONS
+            }
+            ?.maxByOrNull { it.lastModified() }
     }
 
     private fun createNotificationChannel() {
@@ -185,7 +249,7 @@ class GeminiProcessor(
         }
     }
 
-    private fun showSuccessNotification(fileName: String) {
+    private fun showSuccessNotification(fileName: String, modelUsed: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val permissionCheck = ContextCompat.checkSelfPermission(
                 context,
@@ -199,11 +263,11 @@ class GeminiProcessor(
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("Resumen de Llamada Generado")
+            .setContentTitle("Resumen de Llamada Generado ($modelUsed)")
             .setContentText("Archivo listo: $fileName")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("El análisis y transcripción de la llamada se ha completado con éxito y se encuentra guardado en Documents/$SUBFOLDER_NAME/$fileName")
+                    .bigText("Transcripción y resumen completados exitosamente con $modelUsed y guardado en Documents/$SUBFOLDER_NAME/$fileName")
             )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
