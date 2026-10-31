@@ -20,9 +20,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
@@ -36,10 +36,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.callrecorder.data.AppPreferences
 import com.example.callrecorder.network.GeminiProcessor
 import com.example.callrecorder.sync.DriveUploadWorker
-import com.example.callrecorder.sync.GoogleDriveSyncManager
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -74,9 +76,18 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+fun hasAllFilesPermission(): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Environment.isExternalStorageManager()
+    } else {
+        true
+    }
+}
+
 @Composable
 fun MainScreen(prefs: AppPreferences) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
 
     var apiKey by remember { mutableStateOf(prefs.geminiApiKey) }
@@ -88,9 +99,25 @@ fun MainScreen(prefs: AppPreferences) {
     var driveAutoSyncEnabled by remember { mutableStateOf(prefs.isDriveAutoSyncEnabled) }
     var lastSyncFile by remember { mutableStateOf(prefs.lastDriveSyncFile) }
 
+    // Estado de archivos y permisos
     var generatedFiles by remember { mutableStateOf(loadGeneratedFiles()) }
+    var allFilesGranted by remember { mutableStateOf(hasAllFilesPermission()) }
     var isProcessingAI by remember { mutableStateOf(false) }
     var processingStatusMessage by remember { mutableStateOf("") }
+
+    // Recargar archivos automáticamente cuando la app vuelve al primer plano
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                generatedFiles = loadGeneratedFiles()
+                allFilesGranted = hasAllFilesPermission()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     // Cliente de Google Sign-In configurado con permiso DRIVE_FILE
     val gso = remember {
@@ -120,8 +147,10 @@ fun MainScreen(prefs: AppPreferences) {
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         val allGranted = results.values.all { it }
-        val message = if (allGranted) "Todos los permisos concedidos" else "Algunos permisos fueron denegados"
+        val message = if (allGranted) "Permisos básicos concedidos" else "Algunos permisos fueron denegados"
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        generatedFiles = loadGeneratedFiles()
+        allFilesGranted = hasAllFilesPermission()
     }
 
     fun processAudio(audioFile: File) {
@@ -312,7 +341,7 @@ fun MainScreen(prefs: AppPreferences) {
                                         DriveUploadWorker.enqueueUpload(context, f, mime)
                                         count++
                                     }
-                                    Toast.makeText(context, "Sincronizando $count archivo(s) en segundo plano...", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Sincronizando $count archivo(s) con Drive...", Toast.LENGTH_SHORT).show()
                                 },
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -399,7 +428,7 @@ fun MainScreen(prefs: AppPreferences) {
                                 if (latestAudio != null) {
                                     processAudio(latestAudio)
                                 } else {
-                                    Toast.makeText(context, "No hay audios en Documents/Llamadas_NotebookLM", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "No se detectaron audios en Documents/Llamadas_NotebookLM", Toast.LENGTH_SHORT).show()
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
@@ -460,6 +489,48 @@ fun MainScreen(prefs: AppPreferences) {
                     ) {
                         Text("3. Ajustes de HyperOS / MIUI")
                     }
+
+                    // Permiso de acceso a todos los archivos (para leer archivos creados por Termux)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        if (allFilesGranted) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF2E7D32),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Acceso a todos los archivos concedido",
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF2E7D32),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        } else {
+                            Button(
+                                onClick = {
+                                    try {
+                                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                            data = Uri.parse("package:${context.packageName}")
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                                        context.startActivity(intent)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+                            ) {
+                                Icon(imageVector = Icons.Default.FolderOpen, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("4. Permitir Acceso a Archivos de Termux")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -471,11 +542,18 @@ fun MainScreen(prefs: AppPreferences) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Grabaciones y Resúmenes",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Column {
+                    Text(
+                        text = "Grabaciones y Resúmenes",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${generatedFiles.size} archivo(s) encontrados",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
                 TextButton(onClick = { generatedFiles = loadGeneratedFiles() }) {
                     Text("Refrescar")
                 }
@@ -484,11 +562,26 @@ fun MainScreen(prefs: AppPreferences) {
 
         if (generatedFiles.isEmpty()) {
             item {
-                Text(
-                    text = "No hay archivos en Documents/Llamadas_NotebookLM",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.outline
-                )
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "No se detectaron archivos en Documents/Llamadas_NotebookLM",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        if (!allFilesGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "💡 Pulsa arriba el botón '4. Permitir Acceso a Archivos de Termux' para que la app pueda leer los archivos generados por otras apps.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
             }
         } else {
             items(generatedFiles) { file ->
@@ -610,15 +703,28 @@ fun FileItemRow(
 }
 
 private fun loadGeneratedFiles(): List<File> {
-    val dir = File(
+    val dir1 = File(
         Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
         "Llamadas_NotebookLM"
     )
-    if (!dir.exists()) return emptyList()
-    return dir.listFiles()
-        ?.filter { it.extension.lowercase(Locale.ROOT) in (GeminiProcessor.SUPPORTED_EXTENSIONS + "txt") }
-        ?.sortedByDescending { it.lastModified() }
-        ?: emptyList()
+    val dir2 = File("/storage/emulated/0/Documents/Llamadas_NotebookLM")
+    val dir3 = File("/sdcard/Documents/Llamadas_NotebookLM")
+
+    val candidates = listOf(dir1, dir2, dir3)
+    val targetDir = candidates.firstOrNull { it.exists() && (it.listFiles()?.isNotEmpty() == true) }
+        ?: candidates.firstOrNull { it.exists() }
+        ?: dir1
+
+    if (!targetDir.exists()) {
+        targetDir.mkdirs()
+    }
+
+    val files = targetDir.listFiles() ?: return emptyList()
+    return files
+        .filter { file ->
+            file.isFile && file.extension.lowercase(Locale.ROOT) in (GeminiProcessor.SUPPORTED_EXTENSIONS + "txt")
+        }
+        .sortedByDescending { it.lastModified() }
 }
 
 private fun openFile(context: Context, file: File) {

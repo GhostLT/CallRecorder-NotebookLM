@@ -108,13 +108,16 @@ Los dispositivos Xiaomi poseen mecanismos estrictos de ahorro de batería que pu
 4. **Servicio de Accesibilidad:**
    - En `Ajustes` > `Ajustes adicionales` > `Accesibilidad` > `Servicios descargados`, activa **Call Recorder Accessibility Service** y confirma las advertencias de seguridad del sistema.
 
+5. **Acceso a Todos los Archivos (Compatibilidad con Termux y grabaciones existentes):**
+   - En Android 11+ (API 30+), Scoped Storage aísla los archivos generados por otras apps (como Termux). La app incluye el botón *"4. Permitir Acceso a Archivos de Termux"* (`MANAGE_EXTERNAL_STORAGE`) para leer y procesar cualquier grabación preexistente en `Documents/Llamadas_NotebookLM`.
+
 ---
 
 ## 🛠️ Compilación y Generación del APK
 
 ### Compilación Automática en la Nube (GitHub Actions)
 Este repositorio incluye un flujo de integración continua en `.github/workflows/build-apk.yml`.
-Cada vez que se sube un commit a la rama `main`, GitHub compila automáticamente el proyecto en un entorno Ubuntu con el Android SDK oficial y publica el archivo `app-debug.apk` en la pestaña **Releases** y en **Artifacts**.
+Cada vez que se sube un commit a la rama `main`, GitHub compila automáticamente el proyecto en un entorno Ubuntu con el Android SDK oficial y publica el archivo `app-release.apk` (firmado con esquema v1 y v2) en la pestaña **Releases** y en **Artifacts**.
 
 ---
 

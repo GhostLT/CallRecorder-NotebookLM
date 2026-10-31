@@ -224,9 +224,18 @@ class GeminiProcessor(
         return resultFile
     }
 
-    private fun getWorkingDir(): File {
-        val documentsFolder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-        return File(documentsFolder, SUBFOLDER_NAME)
+    fun getWorkingDir(): File {
+        val publicDocs = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+        val dir1 = File(publicDocs, SUBFOLDER_NAME)
+        if (dir1.exists() && (dir1.listFiles()?.isNotEmpty() == true)) return dir1
+
+        val dir2 = File("/storage/emulated/0/Documents", SUBFOLDER_NAME)
+        if (dir2.exists() && (dir2.listFiles()?.isNotEmpty() == true)) return dir2
+
+        val dir3 = File("/sdcard/Documents", SUBFOLDER_NAME)
+        if (dir3.exists() && (dir3.listFiles()?.isNotEmpty() == true)) return dir3
+
+        return if (dir1.exists()) dir1 else if (dir2.exists()) dir2 else dir1
     }
 
     /**

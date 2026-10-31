@@ -42,8 +42,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
-          tag_name: v1.0.4
-          name: "CallRecorder NotebookLM v1.0.4 (APK Release)"
+          tag_name: v1.0.5
+          name: "CallRecorder NotebookLM v1.0.5 (APK Release)"
           body: "Versión final Release firmada con v1+v2 para instalación limpia y directa en Xiaomi HyperOS / MIUI."
           draft: false
           prerelease: false
