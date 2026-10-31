@@ -4,9 +4,9 @@ import android.content.Context
 import android.util.Log
 import com.example.callrecorder.data.AppPreferences
 import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.api.client.extensions.android.http.AndroidHttp
 import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
 import com.google.api.client.http.FileContent
+import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
@@ -41,7 +41,7 @@ class GoogleDriveSyncManager(private val context: Context) {
         }
 
         return Drive.Builder(
-            AndroidHttp.newCompatibleTransport(),
+            NetHttpTransport(),
             GsonFactory.getDefaultInstance(),
             credential
         ).setApplicationName("CallRecorder NotebookLM").build()
