@@ -42,8 +42,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
-          tag_name: v1.0.2
-          name: "CallRecorder NotebookLM v1.0.2 (APK)"
+          tag_name: v1.0.3
+          name: "CallRecorder NotebookLM v1.0.3 (APK)"
           body: "Versión de compilación automática del grabador de llamadas con integración Gemini para NotebookLM."
           draft: false
           prerelease: false

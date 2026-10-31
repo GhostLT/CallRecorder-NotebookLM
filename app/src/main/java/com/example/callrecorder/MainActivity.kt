@@ -20,6 +20,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
@@ -35,6 +38,13 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.example.callrecorder.data.AppPreferences
 import com.example.callrecorder.network.GeminiProcessor
+import com.example.callrecorder.sync.DriveUploadWorker
+import com.example.callrecorder.sync.GoogleDriveSyncManager
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.Scope
+import com.google.api.services.drive.DriveScopes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -73,9 +83,38 @@ fun MainScreen(prefs: AppPreferences) {
     var gsmEnabled by remember { mutableStateOf(prefs.isGsmEnabled) }
     var wappEnabled by remember { mutableStateOf(prefs.isWhatsAppEnabled) }
 
+    // Estados de Google Drive
+    var googleEmail by remember { mutableStateOf(prefs.googleAccountEmail) }
+    var driveAutoSyncEnabled by remember { mutableStateOf(prefs.isDriveAutoSyncEnabled) }
+    var lastSyncFile by remember { mutableStateOf(prefs.lastDriveSyncFile) }
+
     var generatedFiles by remember { mutableStateOf(loadGeneratedFiles()) }
     var isProcessingAI by remember { mutableStateOf(false) }
     var processingStatusMessage by remember { mutableStateOf("") }
+
+    // Cliente de Google Sign-In configurado con permiso DRIVE_FILE
+    val gso = remember {
+        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestScopes(Scope(DriveScopes.DRIVE_FILE))
+            .build()
+    }
+    val googleSignInClient = remember { GoogleSignIn.getClient(context, gso) }
+
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(ApiException::class.java)
+            val email = account?.email ?: ""
+            prefs.googleAccountEmail = email
+            googleEmail = email
+            Toast.makeText(context, "Conectado a Google: $email", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, "Error conectando con Google: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
 
     val permissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -123,7 +162,7 @@ fun MainScreen(prefs: AppPreferences) {
             )
         }
 
-        // --- TARJETA 1: API KEY Y AJUSTES ---
+        // --- TARJETA 1: API KEY Y AJUSTES DE LLAMADA ---
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -188,7 +227,129 @@ fun MainScreen(prefs: AppPreferences) {
             }
         }
 
-        // --- TARJETA 2: PROCESAMIENTO DIRECTO (SUSTITUTO DE TERMUX) ---
+        // --- TARJETA 2: SINCRONIZACIÓN AUTOMÁTICA CON GOOGLE DRIVE ---
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                elevation = CardDefaults.cardElevation(2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.CloudSync,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Google Drive (NotebookLM)",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Sube automáticamente resúmenes y audios a la carpeta 'NotebookLM_Llamadas' en tu Drive.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (googleEmail.isNotBlank()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF2E7D32),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Conectado como: $googleEmail",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Subida automática a Drive", fontSize = 14.sp)
+                            Switch(
+                                checked = driveAutoSyncEnabled,
+                                onCheckedChange = {
+                                    driveAutoSyncEnabled = it
+                                    prefs.isDriveAutoSyncEnabled = it
+                                }
+                            )
+                        }
+
+                        if (lastSyncFile.isNotBlank()) {
+                            Text(
+                                text = "Último subido: $lastSyncFile",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    val files = loadGeneratedFiles()
+                                    var count = 0
+                                    for (f in files) {
+                                        val mime = if (f.extension == "txt") "text/plain" else "audio/mp4"
+                                        DriveUploadWorker.enqueueUpload(context, f, mime)
+                                        count++
+                                    }
+                                    Toast.makeText(context, "Sincronizando $count archivo(s) en segundo plano...", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(imageVector = Icons.Default.CloudUpload, contentDescription = null)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Sincronizar Todo", fontSize = 12.sp)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    googleSignInClient.signOut().addOnCompleteListener {
+                                        prefs.googleAccountEmail = ""
+                                        googleEmail = ""
+                                        Toast.makeText(context, "Cuenta desconectada", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            ) {
+                                Text("Desconectar", fontSize = 12.sp)
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                googleSignInLauncher.launch(googleSignInClient.signInIntent)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(imageVector = Icons.Default.CloudSync, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Conectar cuenta de Google Drive")
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- TARJETA 3: PROCESADOR IA MANUAL ---
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -207,7 +368,7 @@ fun MainScreen(prefs: AppPreferences) {
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Cascada inteligente: Gemini 3.8 Flash ➔ 1.5 Flash ➔ 2.0 Flash Exp. Reemplaza por completo el script de Termux.",
+                        text = "Cascada: Gemini 3.8 Flash ➔ 1.5 Flash ➔ 2.0 Flash Exp. Reemplaza el script de Termux.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                     )
@@ -238,7 +399,7 @@ fun MainScreen(prefs: AppPreferences) {
                                 if (latestAudio != null) {
                                     processAudio(latestAudio)
                                 } else {
-                                    Toast.makeText(context, "No hay archivos de audio en Documents/Llamadas_NotebookLM", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "No hay audios en Documents/Llamadas_NotebookLM", Toast.LENGTH_SHORT).show()
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
@@ -253,7 +414,7 @@ fun MainScreen(prefs: AppPreferences) {
             }
         }
 
-        // --- TARJETA 3: DIAGNÓSTICO Y PERMISOS ---
+        // --- TARJETA 4: DIAGNÓSTICO Y PERMISOS ---
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -341,9 +502,15 @@ fun MainScreen(prefs: AppPreferences) {
                     isAudio = isAudio,
                     hasSummary = hasSummary,
                     isProcessing = isProcessingAI,
+                    isDriveConnected = googleEmail.isNotBlank(),
                     onOpen = { openFile(context, file) },
                     onShare = { shareFile(context, file) },
-                    onProcessAI = { processAudio(file) }
+                    onProcessAI = { processAudio(file) },
+                    onUploadDrive = {
+                        val mime = if (file.extension == "txt") "text/plain" else "audio/mp4"
+                        DriveUploadWorker.enqueueUpload(context, file, mime)
+                        Toast.makeText(context, "Subiendo ${file.name} a Google Drive...", Toast.LENGTH_SHORT).show()
+                    }
                 )
             }
         }
@@ -356,9 +523,11 @@ fun FileItemRow(
     isAudio: Boolean,
     hasSummary: Boolean,
     isProcessing: Boolean,
+    isDriveConnected: Boolean,
     onOpen: () -> Unit,
     onShare: () -> Unit,
-    onProcessAI: () -> Unit
+    onProcessAI: () -> Unit,
+    onUploadDrive: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -406,7 +575,6 @@ fun FileItemRow(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Si es un audio y aún no tiene resumen, mostrar botón de IA directo
                 if (isAudio && !hasSummary) {
                     IconButton(
                         onClick = onProcessAI,
@@ -416,6 +584,16 @@ fun FileItemRow(
                             imageVector = Icons.Default.AutoAwesome,
                             contentDescription = "Procesar con IA",
                             tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                if (isDriveConnected) {
+                    IconButton(onClick = onUploadDrive) {
+                        Icon(
+                            imageVector = Icons.Default.CloudUpload,
+                            contentDescription = "Subir a Drive",
+                            tint = MaterialTheme.colorScheme.secondary
                         )
                     }
                 }

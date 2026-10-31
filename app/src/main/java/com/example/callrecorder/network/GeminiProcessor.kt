@@ -162,6 +162,13 @@ class GeminiProcessor(
             val summaryFile = saveSummaryToFile(audioFile, extractedSummary)
             showSuccessNotification(summaryFile.name, successfulModel ?: "Gemini")
 
+            // Sincronización automática a Google Drive en segundo plano
+            val prefs = com.example.callrecorder.data.AppPreferences(context)
+            if (prefs.isDriveAutoSyncEnabled && prefs.googleAccountEmail.isNotBlank()) {
+                com.example.callrecorder.sync.DriveUploadWorker.enqueueUpload(context, summaryFile, "text/plain")
+                com.example.callrecorder.sync.DriveUploadWorker.enqueueUpload(context, audioFile, mimeType)
+            }
+
             Result.success(summaryFile)
 
         } catch (e: Exception) {
