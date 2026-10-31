@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import com.example.callrecorder.data.AppPreferences
 import com.example.callrecorder.network.GeminiProcessor
 import com.example.callrecorder.sync.DriveUploadWorker
