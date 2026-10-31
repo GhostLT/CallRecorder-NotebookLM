@@ -36,7 +36,7 @@ class GeminiProcessor(
     companion object {
         private const val TAG = "GeminiProcessor"
         private const val API_URL =
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
         private const val SUBFOLDER_NAME = "Llamadas_NotebookLM"
         private const val CHANNEL_ID = "channel_call_summary"
         private const val NOTIFICATION_ID = 2001

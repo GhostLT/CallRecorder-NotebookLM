@@ -1,6 +1,6 @@
 # CallRecorder NotebookLM (Android + Gemini AI)
 
-Aplicación nativa de Android desarrollada en **Kotlin** y **Jetpack Compose**, diseñada específicamente para la captura, grabación y transcripción inteligente de llamadas telefónicas tradicionales (GSM) y llamadas de voz sobre IP (VoIP) de **WhatsApp**, generando resúmenes estructurados automáticos mediante la API de **Google Gemini 2.5 Flash** optimizados para su importación directa en **NotebookLM**.
+Aplicación nativa de Android desarrollada en **Kotlin** y **Jetpack Compose**, diseñada específicamente para la captura, grabación y transcripción inteligente de llamadas telefónicas tradicionales (GSM) y llamadas de voz sobre IP (VoIP) de **WhatsApp**, generando resúmenes estructurados automáticos mediante la API de **Google Gemini 3.8 Flash** optimizados para su importación directa en **NotebookLM**.
 
 Optimizado para dispositivos **Xiaomi (MIUI / HyperOS)** y compatible con **Android 10 hasta Android 14+ (API 26 a 34)**.
 
@@ -14,8 +14,8 @@ Optimizado para dispositivos **Xiaomi (MIUI / HyperOS)** y compatible con **Andr
 - **Captura de Audio Optimizada:**
   - Módulo `AudioManagerRecorder` con `MediaRecorder` configurado con fuente `VOICE_COMMUNICATION` (con cancelación de eco por hardware) y fallback a `MIC`.
   - Formato de compresión de alta eficiencia: **MPEG_4 / AAC**, frecuencia de muestreo **16 kHz (Mono)** a **32 kbps**, maximizando inteligibilidad para modelos de procesamiento de lenguaje natural y reduciendo el consumo de datos y almacenamiento.
-- **Inteligencia Artificial con Google Gemini 2.5 Flash:**
-  - Envío automático de audio mediante payload estructurado `inlineData` en Base64 a `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`.
+- **Inteligencia Artificial con Google Gemini 3.8 Flash:**
+  - Envío automático de audio mediante payload estructurado `inlineData` en Base64 a `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent`.
   - Extracción automática de:
     1. **Resumen Ejecutivo** (Origen, fecha y hora).
     2. **Puntos Principales Tratados**.
@@ -45,7 +45,7 @@ app/src/main/java/com/example/callrecorder/
 │   └── AppPreferences.kt            # Almacenamiento seguro cifrado (API Key y toggles)
 │
 ├── network/
-│   └── GeminiProcessor.kt           # Cliente OkHttp, serialización JSON y llamada a Gemini 2.5 Flash
+│   └── GeminiProcessor.kt           # Cliente OkHttp, serialización JSON y llamada a Gemini 3.8 Flash
 │
 ├── service/
 │   ├── CallAccessibilityService.kt  # Detección de eventos de ventana de WhatsApp
