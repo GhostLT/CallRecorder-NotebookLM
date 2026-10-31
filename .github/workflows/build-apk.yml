@@ -29,24 +29,24 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x gradlew
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --stacktrace
 
-      - name: Upload Debug APK Artifact
+      - name: Upload Release APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CallRecorder-Debug-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: CallRecorder-Release-APK
+          path: app/build/outputs/apk/release/app-release.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
-          tag_name: v1.0.3
-          name: "CallRecorder NotebookLM v1.0.3 (APK)"
-          body: "Versión de compilación automática del grabador de llamadas con integración Gemini para NotebookLM."
+          tag_name: v1.0.4
+          name: "CallRecorder NotebookLM v1.0.4 (APK Release)"
+          body: "Versión final Release firmada con v1+v2 para instalación limpia y directa en Xiaomi HyperOS / MIUI."
           draft: false
           prerelease: false
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: app/build/outputs/apk/release/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
